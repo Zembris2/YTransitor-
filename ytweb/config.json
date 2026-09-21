@@ -1,0 +1,7 @@
+{
+  "ytdlp": "C:\\Users\\STS\\AppData\\Local\\Microsoft\\WinGet\\Packages\\yt-dlp.yt-dlp_Microsoft.Winget.Source_8wekyb3d8bbwe\\yt-dlp.EXE",
+  "ffmpeg": "C:\\Users\\STS\\AppData\\Local\\Microsoft\\WinGet\\Packages\\yt-dlp.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-N-125875-g5d4d3bdc61-win64-gpl\\bin\\ffmpeg.EXE",
+  "outdir": "C:\\Users\\STS\\Downloads\\ytweb",
+  "maxConcurrent": 2,
+  "cookiesBrowser": ""
+}

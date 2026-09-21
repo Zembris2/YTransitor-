@@ -1,0 +1,798 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ytweb // youtube to mp4 &amp; mp3</title>
+<style>
+  :root {
+    --void: #040705;
+    --panel: #070d09;
+    --panel-2: #0a1410;
+    --neon: #00ff62;
+    --neon-dim: #0b7a3a;
+    --line: #123d24;
+    --cyan: #22d3ee;
+    --amber: #ffb648;
+    --red: #ff3b5c;
+    --text: #b6ffd0;
+    --muted: #4e8a66;
+    --mono: "Cascadia Mono", "Consolas", "Courier New", ui-monospace, monospace;
+    /* keeps native select popups and scrollbars dark instead of white */
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+
+  html { background: var(--void); }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    padding: 26px 16px 70px;
+    color: var(--text);
+    font: 14px/1.55 var(--mono);
+    background-color: var(--void);
+    background-image:
+      radial-gradient(900px 520px at 50% -12%, rgba(0, 255, 98, .10), transparent 70%),
+      linear-gradient(rgba(0, 255, 98, .045) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0, 255, 98, .045) 1px, transparent 1px);
+    background-size: auto, 34px 34px, 34px 34px;
+  }
+
+  /* scanline film over everything */
+  body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 9;
+    background: repeating-linear-gradient(
+      to bottom,
+      rgba(0, 0, 0, .22) 0 1px,
+      transparent 1px 3px
+    );
+    mix-blend-mode: multiply;
+  }
+
+  .wrap { max-width: 820px; margin: 0 auto; position: relative; z-index: 2; }
+
+  a { color: var(--cyan); }
+  ::selection { background: var(--neon); color: #001b0a; }
+
+  /* ---------- shared chrome ---------- */
+
+  .panel {
+    position: relative;
+    background:
+      linear-gradient(180deg, rgba(0, 255, 98, .04), transparent 120px),
+      var(--panel);
+    border: 1px solid var(--line);
+    box-shadow: 0 0 0 1px rgba(0, 255, 98, .05), 0 0 26px rgba(0, 255, 98, .07) inset;
+    clip-path: polygon(14px 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%, 0 14px);
+    padding: 16px 20px 20px;
+    margin-bottom: 18px;
+  }
+  /* Sits inside the panel: clip-path also clips descendants, so a label
+     straddling the border would be cut off. */
+  .panel > .tab {
+    display: block;
+    color: var(--neon);
+    font-size: 10.5px;
+    letter-spacing: 2.4px;
+    text-transform: uppercase;
+    margin-bottom: 16px;
+    padding-bottom: 9px;
+    border-bottom: 1px solid var(--line);
+    text-shadow: 0 0 9px rgba(0, 255, 98, .6);
+  }
+  .panel::before,
+  .panel::after {
+    content: "";
+    position: absolute;
+    width: 9px; height: 9px;
+    border: 1px solid var(--neon);
+    opacity: .75;
+  }
+  .panel::before { top: 6px; right: 6px; border-left: 0; border-bottom: 0; }
+  .panel::after { bottom: 6px; left: 6px; border-right: 0; border-top: 0; }
+
+  /* ---------- header ---------- */
+
+  header { margin-bottom: 20px; }
+  .prompt {
+    color: var(--muted);
+    font-size: 12.5px;
+    letter-spacing: .5px;
+    margin-bottom: 8px;
+  }
+  .prompt b { color: var(--neon); font-weight: 400; }
+  .prompt .path { color: var(--cyan); }
+
+  h1 {
+    margin: 0;
+    font-size: clamp(24px, 5.4vw, 40px);
+    letter-spacing: 3px;
+    font-weight: 700;
+    color: var(--neon);
+    text-shadow: 0 0 12px rgba(0, 255, 98, .55), 0 0 38px rgba(0, 255, 98, .22);
+  }
+  h1 .alt { color: var(--cyan); text-shadow: 0 0 12px rgba(34, 211, 238, .5); }
+  .caret {
+    display: inline-block;
+    width: .55em; height: 1em;
+    background: var(--neon);
+    vertical-align: -.14em;
+    margin-left: .18em;
+    box-shadow: 0 0 12px rgba(0, 255, 98, .8);
+    animation: blink 1.05s steps(1) infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  .statusbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 14px;
+    font-size: 11.5px;
+  }
+  .chip {
+    border: 1px solid var(--line);
+    color: var(--muted);
+    padding: 3px 9px;
+    letter-spacing: .8px;
+    text-transform: uppercase;
+    background: rgba(0, 255, 98, .03);
+  }
+  .chip.on { color: var(--neon); border-color: rgba(0, 255, 98, .5); }
+  .chip.off { color: var(--amber); border-color: rgba(255, 182, 72, .45); }
+  .chip.link {
+    cursor: pointer;
+    font: inherit;
+    border-radius: 0;
+    padding: 3px 9px;
+  }
+  .chip.link:hover { color: var(--cyan); border-color: var(--cyan); box-shadow: none; }
+
+  /* ---------- form ---------- */
+
+  label.field {
+    display: block;
+    font-size: 10.5px;
+    color: var(--muted);
+    margin-bottom: 7px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+  label.field::before { content: "> "; color: var(--neon); }
+
+  input[type="text"], input[type="url"], select {
+    width: 100%;
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    color: var(--text);
+    caret-color: var(--neon);
+    padding: 11px 13px;
+    font: inherit;
+    outline: none;
+    border-radius: 0;
+  }
+  input:focus, select:focus {
+    border-color: var(--neon);
+    box-shadow: 0 0 0 1px rgba(0, 255, 98, .25), 0 0 16px rgba(0, 255, 98, .18);
+  }
+  input::placeholder { color: #2f5c42; }
+  select { cursor: pointer; }
+
+  .row { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+  .row > .grow { flex: 1 1 280px; }
+
+  button {
+    font: inherit;
+    letter-spacing: 1.4px;
+    text-transform: uppercase;
+    border: 1px solid var(--line);
+    background: var(--panel-2);
+    color: var(--text);
+    padding: 11px 15px;
+    cursor: pointer;
+    border-radius: 0;
+    transition: color .12s, border-color .12s, box-shadow .12s;
+  }
+  button:hover:not(:disabled) {
+    color: var(--neon);
+    border-color: var(--neon);
+    box-shadow: 0 0 14px rgba(0, 255, 98, .28);
+  }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  button.primary {
+    color: #021409;
+    background: var(--neon);
+    border-color: var(--neon);
+    font-weight: 700;
+    box-shadow: 0 0 20px rgba(0, 255, 98, .45);
+  }
+  button.primary:hover:not(:disabled) {
+    color: #021409;
+    background: #4dff8c;
+    box-shadow: 0 0 30px rgba(0, 255, 98, .7);
+  }
+  button.small { padding: 6px 11px; font-size: 11.5px; }
+
+  .modes { display: flex; gap: 8px; margin: 18px 0 16px; }
+  .modes button { flex: 1; padding: 10px; }
+  .modes button[aria-pressed="true"] {
+    color: var(--neon);
+    border-color: var(--neon);
+    background: rgba(0, 255, 98, .09);
+    box-shadow: inset 0 0 18px rgba(0, 255, 98, .16), 0 0 14px rgba(0, 255, 98, .2);
+  }
+
+  .opts { display: flex; gap: 14px; align-items: flex-end; flex-wrap: wrap; }
+  .opts > div { flex: 1 1 170px; }
+  .check {
+    display: flex; align-items: center; gap: 8px;
+    color: var(--muted); font-size: 12.5px; padding-bottom: 11px;
+    letter-spacing: 1px; text-transform: uppercase;
+  }
+  .check input { accent-color: var(--neon); width: 15px; height: 15px; }
+
+  .preview { display: none; gap: 14px; margin-top: 18px; align-items: center; }
+  .preview.show { display: flex; }
+  .preview img {
+    width: 138px;
+    border: 1px solid var(--line);
+    filter: saturate(.7) contrast(1.05) brightness(.9);
+  }
+  .preview .meta { min-width: 0; }
+  .preview .t {
+    color: var(--neon); font-weight: 700;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .preview .m { color: var(--muted); font-size: 12.5px; }
+
+  .msg {
+    display: none;
+    margin-top: 16px;
+    padding: 10px 12px;
+    font-size: 13px;
+    border-left: 3px solid var(--neon);
+    background: rgba(0, 255, 98, .06);
+    color: var(--neon);
+  }
+  .msg.show { display: block; }
+  .msg::before { content: "[ok] "; opacity: .8; }
+  .msg.err {
+    border-left-color: var(--red);
+    background: rgba(255, 59, 92, .08);
+    color: #ff8fa4;
+  }
+  .msg.err::before { content: "[!!] "; }
+  .msg.wait {
+    border-left-color: var(--cyan);
+    background: rgba(34, 211, 238, .07);
+    color: #8fe6f7;
+  }
+  .msg.wait::before { content: "[..] "; }
+
+  /* ---------- banner ---------- */
+
+  .banner {
+    display: none;
+    border: 1px solid rgba(255, 182, 72, .45);
+    background: rgba(255, 182, 72, .07);
+    color: #ffd79b;
+    padding: 13px 15px;
+    margin-bottom: 18px;
+    font-size: 13px;
+    clip-path: polygon(12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%, 0 12px);
+  }
+  .banner.show { display: block; }
+  .banner b { color: var(--amber); }
+  .banner.probe {
+    border-color: rgba(255, 59, 92, .45);
+    background: rgba(255, 59, 92, .08);
+    color: #ffb3c0;
+  }
+  .banner.probe b { color: var(--red); }
+  code {
+    background: rgba(0, 255, 98, .1);
+    color: var(--neon);
+    padding: 1px 5px;
+    font-family: var(--mono);
+  }
+
+  /* ---------- jobs ---------- */
+
+  h2 {
+    font-size: 11.5px;
+    letter-spacing: 3px;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin: 26px 0 12px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  h2::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, var(--line), transparent);
+  }
+
+  .job {
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--neon-dim);
+    background: var(--panel);
+    padding: 13px 15px;
+    margin-bottom: 9px;
+  }
+  .job .top { display: flex; gap: 10px; align-items: baseline; }
+  .job .name {
+    flex: 1; min-width: 0;
+    color: var(--text);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .job .name::before { content: "./ "; color: var(--neon); }
+  .job .tag {
+    font-size: 10.5px;
+    letter-spacing: 1.4px;
+    text-transform: uppercase;
+    color: var(--muted);
+    border: 1px solid var(--line);
+    padding: 2px 7px;
+    white-space: nowrap;
+  }
+  .job .tag.done { color: var(--neon); border-color: rgba(0, 255, 98, .5); }
+  .job .tag.error { color: var(--red); border-color: rgba(255, 59, 92, .5); }
+
+  .bar {
+    height: 8px;
+    margin: 11px 0 8px;
+    border: 1px solid var(--line);
+    background:
+      repeating-linear-gradient(90deg, rgba(0, 255, 98, .09) 0 2px, transparent 2px 5px);
+    overflow: hidden;
+  }
+  .bar > i {
+    display: block; height: 100%; width: 0;
+    background:
+      repeating-linear-gradient(90deg, var(--neon) 0 6px, #0bd94f 6px 9px);
+    box-shadow: 0 0 12px rgba(0, 255, 98, .6);
+    transition: width .25s linear;
+  }
+  /* process alive but silent: sweep instead of a frozen bar */
+  .bar.stalled {
+    background: repeating-linear-gradient(
+      90deg, rgba(34, 211, 238, .35) 0 10px, transparent 10px 22px);
+    background-size: 32px 100%;
+    border-color: rgba(34, 211, 238, .4);
+    animation: sweep .9s linear infinite;
+  }
+  .bar.stalled > i { opacity: .25; }
+  @keyframes sweep { to { background-position: 32px 0; } }
+
+  .job .line {
+    display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+    font-size: 12px; color: var(--muted);
+    letter-spacing: .6px; text-transform: uppercase;
+  }
+  .job .line .grow { flex: 1; }
+  .job .err {
+    color: #ff8fa4; font-size: 12.5px; margin-top: 6px;
+    word-break: break-word; text-transform: none;
+  }
+
+  /* ---------- settings ---------- */
+
+  details.settings { margin-top: 6px; }
+  details.settings summary {
+    cursor: pointer;
+    color: var(--muted);
+    font-size: 12px;
+    letter-spacing: 1.6px;
+    text-transform: uppercase;
+    list-style: none;
+    padding: 6px 0;
+  }
+  details.settings summary::-webkit-details-marker { display: none; }
+  details.settings summary::before { content: "[+] "; color: var(--neon); }
+  details.settings[open] summary::before { content: "[-] "; }
+  details.settings summary:hover { color: var(--neon); }
+  .settings .grid { display: grid; gap: 15px; }
+  .hint { color: var(--muted); font-size: 11.5px; margin-top: 5px; }
+
+  footer {
+    margin-top: 22px;
+    color: var(--muted);
+    font-size: 11px;
+    letter-spacing: 1.6px;
+    text-transform: uppercase;
+    display: flex; gap: 8px; flex-wrap: wrap;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .caret { animation: none; }
+    .bar.stalled { animation: none; }
+    body::after { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="prompt">
+      <b>root@securebox</b>:<span class="path">~/ytweb</span>$ ./ytweb --source youtube --out mp4,mp3
+    </div>
+    <h1>MEDIA <span class="alt">GRAB</span>BER<span class="caret"></span></h1>
+    <div class="statusbar" id="statusbar">
+      <span class="chip" id="engine">booting…</span>
+      <span class="chip" id="slots">slots …</span>
+      <button class="chip link" id="openFolder" type="button">[ open drop folder ]</button>
+    </div>
+  </header>
+
+  <div class="banner probe" id="probeBanner"></div>
+
+  <div class="banner" id="ffmpegBanner">
+    <b>[warn] ffmpeg not linked.</b> YouTube ships video and audio as separate
+    streams, so nearly every video needs ffmpeg to splice them back together —
+    MP3 extraction needs it too. Install with
+    <code>winget install Gyan.FFmpeg</code>, restart this app, and it is picked
+    up automatically.
+  </div>
+
+  <section class="panel">
+    <span class="tab">// input</span>
+
+    <div class="row">
+      <div class="grow">
+        <label class="field" for="url">video url</label>
+        <input id="url" type="url" placeholder="https://www.youtube.com/watch?v=…" autocomplete="off" spellcheck="false">
+      </div>
+      <button id="fetch">[ scan ]</button>
+    </div>
+
+    <div class="preview" id="preview">
+      <img id="thumb" alt="">
+      <div class="meta">
+        <div class="t" id="ptitle"></div>
+        <div class="m" id="pmeta"></div>
+      </div>
+    </div>
+
+    <div class="modes">
+      <button id="modeMp4" aria-pressed="true">[ mp4 · video ]</button>
+      <button id="modeMp3" aria-pressed="false">[ mp3 · audio ]</button>
+    </div>
+
+    <div class="opts">
+      <div id="qualityWrap">
+        <label class="field" for="quality">resolution cap</label>
+        <select id="quality">
+          <option value="2160">2160p :: 4K</option>
+          <option value="1440">1440p :: QHD</option>
+          <option value="1080" selected>1080p :: FHD</option>
+          <option value="720">720p  :: HD</option>
+          <option value="480">480p  :: SD</option>
+          <option value="360">360p  :: LOW</option>
+          <option value="best">MAX   :: BEST</option>
+        </select>
+      </div>
+      <div class="check">
+        <input type="checkbox" id="playlist"><label for="playlist">full playlist</label>
+      </div>
+      <div style="flex:0 0 auto">
+        <button class="primary" id="go">&gt;_ execute</button>
+      </div>
+    </div>
+
+    <div class="msg" id="msg"></div>
+  </section>
+
+  <details class="settings" id="settings">
+    <summary>config :: binary paths &amp; drop folder</summary>
+    <div class="panel grid">
+      <span class="tab">// runtime_config</span>
+      <div>
+        <label class="field" for="ytdlp">yt-dlp binary</label>
+        <input id="ytdlp" type="text" placeholder="C:\Users\you\yt-dlp.exe">
+        <div class="hint">Empty = use <code>yt-dlp</code> from PATH, else <code>python -m yt_dlp</code>.</div>
+      </div>
+      <div>
+        <label class="field" for="ffmpeg">ffmpeg binary</label>
+        <input id="ffmpeg" type="text" placeholder="C:\ffmpeg\bin\ffmpeg.exe">
+        <div class="hint">Required for MP3 and for anything above a pre-muxed stream.</div>
+      </div>
+      <div>
+        <label class="field" for="outdir">drop folder</label>
+        <input id="outdir" type="text">
+      </div>
+      <div>
+        <label class="field" for="maxjobs">parallel slots</label>
+        <select id="maxjobs">
+          <option value="1">1 :: one at a time</option>
+          <option value="2" selected>2 :: balanced</option>
+          <option value="3">3</option>
+          <option value="4">4</option>
+          <option value="6">6</option>
+          <option value="8">8 :: reckless</option>
+        </select>
+        <div class="hint">Extra jobs wait in the queue instead of fighting over bandwidth.</div>
+      </div>
+      <div>
+        <label class="field" for="cookies">session source</label>
+        <select id="cookies">
+          <option value="">off :: public videos only</option>
+        </select>
+        <div class="hint">
+          Borrows your logged-in session from a local browser so age-gated and
+          members-only videos resolve. Close that browser first — it locks its
+          own cookie store while running.
+        </div>
+      </div>
+      <div><button id="saveCfg">[ commit config ]</button></div>
+    </div>
+  </details>
+
+  <h2>job_queue</h2>
+  <div id="jobs"></div>
+
+  <footer>
+    <span>ytweb</span><span>::</span>
+    <span>localhost only</span><span>::</span>
+    <span>no telemetry</span>
+  </footer>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let mode = "mp4";
+let config = {};
+const seen = new Map();
+
+function say(text, kind) {
+  const box = $("msg");
+  box.textContent = text;
+  box.className = text ? "msg show " + (kind || "info") : "msg";
+}
+
+async function api(path, options) {
+  const res = await fetch(path, options);
+  const text = await res.text();
+  let data = {};
+  if (text) { try { data = JSON.parse(text); } catch (e) { data = {}; } }
+  if (!res.ok) throw new Error(data.error || ("request failed: " + res.status));
+  return data;
+}
+
+function post(path, body) {
+  return api(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body || {})
+  });
+}
+
+function humanSize(bytesPerSec) {
+  if (!bytesPerSec) return "";
+  const units = ["B/s", "KB/s", "MB/s", "GB/s"];
+  let value = bytesPerSec, i = 0;
+  while (value >= 1024 && i < units.length - 1) { value /= 1024; i++; }
+  return value.toFixed(1) + " " + units[i];
+}
+
+function humanTime(seconds) {
+  if (!seconds || seconds < 0) return "";
+  const m = Math.floor(seconds / 60), s = Math.floor(seconds % 60);
+  return m + "m" + String(s).padStart(2, "0") + "s";
+}
+
+function setMode(next) {
+  mode = next;
+  $("modeMp4").setAttribute("aria-pressed", String(next === "mp4"));
+  $("modeMp3").setAttribute("aria-pressed", String(next === "mp3"));
+  $("qualityWrap").style.display = next === "mp4" ? "" : "none";
+}
+
+async function loadConfig() {
+  config = await api("/api/config");
+  $("ytdlp").value = config.ytdlp === "python -m yt_dlp" ? "" : (config.ytdlp || "");
+  $("ffmpeg").value = config.ffmpeg || "";
+  $("outdir").value = config.outdir || "";
+  $("maxjobs").value = String(config.maxConcurrent || 2);
+
+  const cookies = $("cookies");
+  cookies.length = 1;
+  (config.cookieBrowsers || []).forEach((name) => {
+    cookies.add(new Option(name, name));
+  });
+  cookies.value = config.cookiesBrowser || "";
+
+  $("ffmpegBanner").classList.toggle("show", !config.hasFfmpeg);
+
+  $("slots").textContent = "slots " + (config.maxConcurrent || 2) +
+    (config.cookiesBrowser ? " · session " + config.cookiesBrowser : "");
+
+  const caps = config.capabilities || {};
+  const probe = $("probeBanner");
+  if (caps.checked && caps.missing && caps.missing.length) {
+    probe.innerHTML = "<b>[probe] this yt-dlp is missing " +
+      caps.missing.join(", ") +
+      ".</b> Downloads may still work, but progress reporting, merging or the " +
+      "session option can misbehave. Update yt-dlp, or point config at a build " +
+      "that has these flags.";
+    probe.classList.add("show");
+  } else {
+    probe.classList.remove("show");
+  }
+
+  const engine = $("engine");
+  if (config.ytdlpVersion) {
+    engine.textContent = "yt-dlp " + config.ytdlpVersion +
+      (config.hasFfmpeg ? " · ffmpeg linked" : " · ffmpeg missing");
+    engine.className = "chip " + (config.hasFfmpeg ? "on" : "off");
+  } else {
+    engine.textContent = "yt-dlp not found — set path in config";
+    engine.className = "chip off";
+    $("settings").open = true;
+  }
+}
+
+function renderJob(job) {
+  let el = seen.get(job.id);
+  if (!el) {
+    el = document.createElement("div");
+    el.className = "job";
+    el.innerHTML =
+      '<div class="top"><span class="name"></span><span class="tag"></span></div>' +
+      '<div class="bar"><i></i></div>' +
+      '<div class="line"><span class="stage grow"></span>' +
+      '<button class="small act2"></button>' +
+      '<button class="small act"></button></div>' +
+      '<div class="err"></div>';
+    seen.set(job.id, el);
+    $("jobs").prepend(el);
+  }
+
+  el.querySelector(".name").textContent = job.title || job.url;
+
+  const tag = el.querySelector(".tag");
+  const queued = job.status === "queued" && job.queuePos ? " #" + job.queuePos : "";
+  tag.textContent = "[" + job.mode + " · " + job.status + queued + "]";
+  tag.className = "tag " + (job.status === "done" ? "done" : job.status === "error" ? "error" : "");
+
+  el.querySelector(".bar > i").style.width = job.percent + "%";
+  el.querySelector(".bar").classList.toggle("stalled", !!job.stalled);
+
+  const bits = [job.stalled ? "working · no progress data" : job.stage];
+  if (job.status === "running" && !job.stalled) {
+    if (job.percent) bits.push(job.percent.toFixed(1) + "%");
+    if (job.speed) bits.push(humanSize(job.speed));
+    if (job.eta) bits.push("eta " + humanTime(job.eta));
+  }
+  el.querySelector(".stage").textContent = bits.filter(Boolean).join(" :: ");
+  el.querySelector(".err").textContent = job.error || "";
+
+  // The file is already on this machine, so the useful actions are "play it"
+  // and "show me where it is" — not a second download through the browser.
+  const act = el.querySelector(".act");
+  const act2 = el.querySelector(".act2");
+  if (job.status === "done" && job.files.length) {
+    setAction(act, "[ play ]", () => post("/api/jobs/" + job.id + "/open"));
+    setAction(act2, "[ folder ]", () => post("/api/jobs/" + job.id + "/reveal"));
+  } else if (job.status === "running" || job.status === "queued") {
+    setAction(act, "[ abort ]", () => post("/api/jobs/" + job.id + "/cancel"));
+    setAction(act2, "", null);
+  } else {
+    setAction(act, "", null);
+    setAction(act2, "", null);
+  }
+}
+
+function setAction(button, label, run) {
+  if (!label) {
+    button.style.display = "none";
+    button.onclick = null;
+    return;
+  }
+  button.textContent = label;
+  button.disabled = false;
+  button.style.display = "";
+  button.onclick = () => run().catch((err) => say(err.message, "err"));
+}
+
+function follow(jobId) {
+  const source = new EventSource("/api/jobs/" + jobId + "/events");
+  source.onmessage = (event) => {
+    const job = JSON.parse(event.data);
+    renderJob(job);
+    if (["done", "error", "cancelled"].includes(job.status)) source.close();
+  };
+  source.onerror = () => source.close();
+}
+
+$("modeMp4").onclick = () => setMode("mp4");
+$("modeMp3").onclick = () => {
+  if (!config.hasFfmpeg) { say("mp3 requires ffmpeg — set its path in config.", "err"); return; }
+  setMode("mp3");
+};
+
+$("fetch").onclick = async () => {
+  const url = $("url").value.trim();
+  if (!url) { say("no url supplied.", "err"); return; }
+  say("reading video info…", "wait");
+  $("fetch").disabled = true;
+  try {
+    const info = await post("/api/probe", { url });
+    $("thumb").src = info.thumbnail || "";
+    $("thumb").style.display = info.thumbnail ? "block" : "none";
+    $("ptitle").textContent = info.title || url;
+    const parts = [];
+    if (info.uploader) parts.push(info.uploader);
+    if (info.duration) parts.push(humanTime(info.duration));
+    if (info.heights.length) parts.push("max " + info.heights[0] + "p");
+    $("pmeta").textContent = parts.join(" :: ");
+    $("preview").classList.add("show");
+    say("video found.");
+  } catch (err) {
+    $("preview").classList.remove("show");
+    say(err.message, "err");
+  } finally {
+    $("fetch").disabled = false;
+  }
+};
+
+$("go").onclick = async () => {
+  const url = $("url").value.trim();
+  if (!url) { say("no url supplied.", "err"); return; }
+  $("go").disabled = true;
+  try {
+    const job = await post("/api/jobs", {
+      url,
+      mode,
+      quality: $("quality").value,
+      playlist: $("playlist").checked
+    });
+    renderJob(job);
+    follow(job.id);
+    say("job queued — tracking below.");
+  } catch (err) {
+    say(err.message, "err");
+  } finally {
+    $("go").disabled = false;
+  }
+};
+
+$("saveCfg").onclick = async () => {
+  try {
+    await post("/api/config", {
+      ytdlp: $("ytdlp").value.trim(),
+      ffmpeg: $("ffmpeg").value.trim(),
+      outdir: $("outdir").value.trim(),
+      maxConcurrent: $("maxjobs").value,
+      cookiesBrowser: $("cookies").value
+    });
+    await loadConfig();
+    say("config committed.");
+  } catch (err) {
+    say(err.message, "err");
+  }
+};
+
+$("openFolder").onclick = () => post("/api/open-folder").catch((err) => say(err.message, "err"));
+
+$("url").addEventListener("keydown", (event) => {
+  if (event.key === "Enter") $("go").click();
+});
+
+loadConfig().catch((err) => say(err.message, "err"));
+api("/api/jobs").then((jobs) => {
+  jobs.slice().reverse().forEach((job) => {
+    renderJob(job);
+    if (job.status === "running" || job.status === "queued") follow(job.id);
+  });
+}).catch(() => {});
+</script>
+</body>
+</html>
