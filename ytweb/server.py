@@ -227,6 +227,12 @@ class Config:
             self.max_concurrent = clamp_concurrency(data.get("maxConcurrent"))
             browser = (data.get("cookiesBrowser") or "").lower()
             self.cookies_browser = browser if browser in COOKIE_BROWSERS else ""
+        # A saved path goes stale when the config is copied to another machine
+        # or winget upgrades into a new versioned folder; re-detect in that case.
+        if self.ytdlp and not Path(self.ytdlp).is_file():
+            self.ytdlp = ""
+        if self.ffmpeg and not Path(self.ffmpeg).is_file():
+            self.ffmpeg = ""
         if not self.ytdlp:
             self.ytdlp = find_binary("yt-dlp", candidate_ytdlp_paths()) or ""
         if not self.ffmpeg:
